@@ -1,0 +1,13 @@
+schemaVersion: "1.2"
+endpoints:
+    - name: file-reader-writer-c5d
+      displayName: File Reader Writer
+      service:
+        basePath: /
+        port: 8081
+      type: REST
+      networkVisibilities:
+        - Project
+        - Public
+        - Organization
+      schemaFilePath: openapi.yaml
