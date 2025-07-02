@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -27,6 +30,7 @@ func main() {
 	http.HandleFunc("/listFiles", listFiles)
 	http.HandleFunc("/deleteFile", deleteFile)
 	http.HandleFunc("/generateFiles", generateFiles)
+	http.HandleFunc("/proxy", proxyRequest)
 
 	http.ListenAndServe(":8081", nil)
 }
@@ -216,4 +220,95 @@ func generateContentSize(sizeInMB int) string {
 	totalSize := sizeInMB * 1024 * 1024
 	repeatCount := totalSize / chunkSize
 	return strings.Repeat(chunk, repeatCount)
+}
+
+type ProxyRequest struct {
+	URL     string              `json:"url"`
+	Method  string              `json:"method"`
+	Headers map[string][]string `json:"headers,omitempty"`
+	Body    string              `json:"body,omitempty"`
+	Timeout int                 `json:"timeout,omitempty"` // timeout in seconds, default 30
+}
+
+type ProxyResponse struct {
+	StatusCode int                 `json:"statusCode"`
+	Headers    map[string][]string `json:"headers"`
+	Body       string              `json:"body"`
+}
+
+func proxyRequest(w http.ResponseWriter, r *http.Request) {
+	requestId := generateUUID()
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var proxyReq ProxyRequest
+	err := json.NewDecoder(r.Body).Decode(&proxyReq)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %s", err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	if proxyReq.URL == "" {
+		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+
+	if proxyReq.Method == "" {
+		proxyReq.Method = "GET"
+	}
+
+	if proxyReq.Timeout == 0 {
+		proxyReq.Timeout = 30
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"url":       proxyReq.URL,
+		"method":    proxyReq.Method,
+		"requestId": requestId,
+		"serverId":  serverId,
+	}).Info("Proxying HTTP request")
+
+	client := &http.Client{
+		Timeout: time.Duration(proxyReq.Timeout) * time.Second,
+	}
+
+	var bodyReader io.Reader
+	if proxyReq.Body != "" {
+		bodyReader = bytes.NewBufferString(proxyReq.Body)
+	}
+
+	req, err := http.NewRequest(proxyReq.Method, proxyReq.URL, bodyReader)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create request: %s", err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	for key, values := range proxyReq.Headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to execute request: %s", err.Error()), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read response body: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	proxyResp := ProxyResponse{
+		StatusCode: resp.StatusCode,
+		Headers:    resp.Header,
+		Body:       string(respBody),
+	}
+
+	writeJSON(w, "Proxy request completed", requestId, proxyResp)
 }

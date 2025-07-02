@@ -155,3 +155,74 @@ paths:
           description: Method not allowed
         "500":
           description: Internal Server Error
+  /proxy:
+    post:
+      summary: Proxies an HTTP request to the specified URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  description: The target URL to proxy the request to
+                method:
+                  type: string
+                  description: HTTP method (GET, POST, PUT, DELETE, etc.). Defaults to GET
+                  default: GET
+                headers:
+                  type: object
+                  description: HTTP headers to include in the proxied request
+                  additionalProperties:
+                    type: array
+                    items:
+                      type: string
+                body:
+                  type: string
+                  description: Request body to send with the proxied request
+                timeout:
+                  type: integer
+                  description: Request timeout in seconds. Defaults to 30
+                  default: 30
+      responses:
+        "200":
+          description: Proxy request completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  serverId:
+                    type: string
+                  requestId:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      statusCode:
+                        type: integer
+                        description: HTTP status code from the proxied response
+                      headers:
+                        type: object
+                        description: HTTP headers from the proxied response
+                        additionalProperties:
+                          type: array
+                          items:
+                            type: string
+                      body:
+                        type: string
+                        description: Response body from the proxied request
+        "400":
+          description: Bad Request (invalid request body or missing URL)
+        "405":
+          description: Method not allowed
+        "502":
+          description: Bad Gateway (failed to execute proxy request)
+        "500":
+          description: Internal Server Error
