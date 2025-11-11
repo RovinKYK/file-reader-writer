@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -66,6 +67,21 @@ func writeFile(w http.ResponseWriter, r *http.Request) {
 		"requestId":   requestId,
 		"serverId":    serverId,
 	}).Info("Writing file")
+
+	if filePath == "" {
+		http.Error(w, "filePath is required", http.StatusBadRequest)
+		return
+	}
+
+	// Ensure parent directory exists. If filePath is just a filename in the
+	// current working directory, Dir will be "." and we don't need to create it.
+	dir := filepath.Dir(filePath)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			http.Error(w, fmt.Sprintf("Unable to create directories: %s", err.Error()), http.StatusInternalServerError)
+			return
+		}
+	}
 
 	err := os.WriteFile(filePath, []byte(fileContent), 0644)
 	if err != nil {
